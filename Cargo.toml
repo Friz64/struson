@@ -14,7 +14,7 @@ categories = ["parser-implementations"]
 
 [dependencies]
 embedded-io-async = "0.6"
-strum = { version = "0.27.1", features = ["derive"] }
+strum = { version = "0.27.1", default-features = false, features = ["derive"] }
 duplicate = "2.0.0"
 thiserror = { version = "2.0.12", default-features = false }
 
