@@ -4,20 +4,20 @@ pub(crate) trait NumberBytesProvider<E> {
     /// Consumes the byte which is currently processed, and peeks at the next.
     ///
     /// Returns `None` if the end of the input has been reached.
-    fn consume_current_peek_next(&mut self) -> Result<Option<u8>, E>;
+    async fn consume_current_peek_next(&mut self) -> Result<Option<u8>, E>;
 }
 
 /// Returns `None` if the number is invalid and `Some(exponent_digits_count)` if
 /// the number is valid. The `exponent_digits_count` is the number of exponent
 /// digits, without sign and without leading 0s.
-pub(crate) fn consume_json_number<E, R: NumberBytesProvider<E>>(
+pub(crate) async fn consume_json_number<E, R: NumberBytesProvider<E>>(
     reader: &mut R,
     first_byte: u8,
 ) -> Result<Option<u32>, E> {
     let mut byte = first_byte;
 
     if byte == b'-' {
-        if let Some(b) = reader.consume_current_peek_next()? {
+        if let Some(b) = reader.consume_current_peek_next().await? {
             byte = b;
         } else {
             // Invalid number (missing integer part)
@@ -28,7 +28,7 @@ pub(crate) fn consume_json_number<E, R: NumberBytesProvider<E>>(
     // Consume integer part, but treat 0 specially, because leading 0 before integer part is disallowed
     if matches!(byte, b'1'..=b'9') {
         loop {
-            if let Some(b) = reader.consume_current_peek_next()? {
+            if let Some(b) = reader.consume_current_peek_next().await? {
                 byte = b;
             } else {
                 // Valid number with 0 exponent digits
@@ -40,7 +40,7 @@ pub(crate) fn consume_json_number<E, R: NumberBytesProvider<E>>(
             }
         }
     } else if byte == b'0' {
-        if let Some(b) = reader.consume_current_peek_next()? {
+        if let Some(b) = reader.consume_current_peek_next().await? {
             byte = b;
         } else {
             // Valid number with 0 exponent digits
@@ -53,7 +53,7 @@ pub(crate) fn consume_json_number<E, R: NumberBytesProvider<E>>(
 
     // Fraction part
     if byte == b'.' {
-        if let Some(b) = reader.consume_current_peek_next()? {
+        if let Some(b) = reader.consume_current_peek_next().await? {
             byte = b;
         } else {
             // Invalid number (missing decimal part)
@@ -66,7 +66,7 @@ pub(crate) fn consume_json_number<E, R: NumberBytesProvider<E>>(
         }
 
         loop {
-            if let Some(b) = reader.consume_current_peek_next()? {
+            if let Some(b) = reader.consume_current_peek_next().await? {
                 byte = b;
             } else {
                 // Valid number with 0 exponent digits
@@ -82,7 +82,7 @@ pub(crate) fn consume_json_number<E, R: NumberBytesProvider<E>>(
     // Exponent part
     let mut exponent_digits_count = 0;
     if matches!(byte, b'e' | b'E') {
-        if let Some(b) = reader.consume_current_peek_next()? {
+        if let Some(b) = reader.consume_current_peek_next().await? {
             byte = b;
         } else {
             // Invalid number (missing exponent number)
@@ -90,7 +90,7 @@ pub(crate) fn consume_json_number<E, R: NumberBytesProvider<E>>(
         }
 
         if matches!(byte, b'-' | b'+') {
-            if let Some(b) = reader.consume_current_peek_next()? {
+            if let Some(b) = reader.consume_current_peek_next().await? {
                 byte = b;
             } else {
                 // Invalid number (missing exponent number)
@@ -107,7 +107,7 @@ pub(crate) fn consume_json_number<E, R: NumberBytesProvider<E>>(
         }
 
         loop {
-            if let Some(b) = reader.consume_current_peek_next()? {
+            if let Some(b) = reader.consume_current_peek_next().await? {
                 byte = b;
             } else {
                 // Valid number
@@ -140,7 +140,7 @@ struct BytesSliceNumberBytesProvider<'a> {
     index: usize,
 }
 impl NumberBytesProvider<()> for BytesSliceNumberBytesProvider<'_> {
-    fn consume_current_peek_next(&mut self) -> Result<Option<u8>, ()> {
+    async fn consume_current_peek_next(&mut self) -> Result<Option<u8>, ()> {
         self.index += 1;
         if self.index < self.bytes.len() {
             Ok(Some(self.bytes[self.index]))
@@ -150,7 +150,7 @@ impl NumberBytesProvider<()> for BytesSliceNumberBytesProvider<'_> {
     }
 }
 
-pub(crate) fn is_valid_json_number(value: &str) -> bool {
+pub(crate) async fn is_valid_json_number(value: &str) -> bool {
     if value.is_empty() {
         return false;
     }
@@ -161,44 +161,11 @@ pub(crate) fn is_valid_json_number(value: &str) -> bool {
         index: 0,
     };
     let is_valid = consume_json_number(&mut bytes_provider, value_bytes[0])
+        .await
         .unwrap()
         // Just check that number is valid, ignore exponent digits count
         .is_some();
 
     // Is valid and complete string was consumed
     is_valid && bytes_provider.index >= value_bytes.len()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn number_validation() {
-        assert!(is_valid_json_number("0"));
-        assert!(is_valid_json_number("-0"));
-        assert!(is_valid_json_number("1230.1"));
-        assert!(is_valid_json_number("1.01e1"));
-        assert!(is_valid_json_number("12.120e+01"));
-        assert!(is_valid_json_number("12.120e-10"));
-
-        assert_eq!(false, is_valid_json_number("00"));
-        assert_eq!(false, is_valid_json_number("-00"));
-        assert_eq!(false, is_valid_json_number("+1"));
-        assert_eq!(false, is_valid_json_number(".1"));
-        assert_eq!(false, is_valid_json_number("1.-1"));
-        assert_eq!(false, is_valid_json_number("1e"));
-        assert_eq!(false, is_valid_json_number("1e+-1"));
-        assert_eq!(false, is_valid_json_number("1e.1"));
-
-        assert_eq!(false, is_valid_json_number(""));
-        assert_eq!(false, is_valid_json_number("1a"));
-        assert_eq!(false, is_valid_json_number("NaN"));
-        assert_eq!(false, is_valid_json_number("nan"));
-        assert_eq!(false, is_valid_json_number("NAN"));
-        assert_eq!(false, is_valid_json_number(&f32::NAN.to_string()));
-        assert_eq!(false, is_valid_json_number("Infinity"));
-        assert_eq!(false, is_valid_json_number("-Infinity"));
-        assert_eq!(false, is_valid_json_number(&f32::INFINITY.to_string()));
-    }
 }

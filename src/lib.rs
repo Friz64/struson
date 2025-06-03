@@ -1,3 +1,4 @@
+#![no_std]
 #![warn(missing_docs)]
 // Enable 'unused' warnings for doc tests (are disabled by default)
 #![doc(test(no_crate_inject))]
@@ -189,11 +190,9 @@
 //! allow writing a `Serialize` to a `JsonWriter` and reading a `Deserialize` from
 //! a `JsonReader`. See the [`serde` module](crate::serde) of this crate for more information.
 
-pub mod reader;
-pub mod writer;
+extern crate alloc;
 
-#[cfg(feature = "serde")]
-pub mod serde;
+pub mod reader;
 
 mod json_number;
 mod utf8;
